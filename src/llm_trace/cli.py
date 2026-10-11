@@ -7,6 +7,7 @@ import sqlite3
 import sys
 
 from .storage import SQLiteStore
+from .summary import summarize
 
 
 def _display(value: str) -> str:
@@ -46,6 +47,33 @@ def _show(trace: dict) -> str:
     return "\n".join(lines)
 
 
+def _summary(data: dict) -> str:
+    lines = [
+        f"{_display(data['name'])}  {data['status']}  {data['duration_ms']:.2f} ms",
+        f"Spans: {data['span_count']}  Model calls: {data['model_calls']}",
+    ]
+    if data["error_type"]:
+        lines.append(f"Error: {_display(data['error_type'])}")
+    if data["model_calls"]:
+        if data["recorded_input_tokens"] is None:
+            lines.append("Recorded tokens: unknown")
+        else:
+            lines.append(f"Recorded tokens: {data['recorded_input_tokens']} in / {data['recorded_output_tokens']} out")
+        lines.append(f"Usage coverage: {data['model_calls_with_usage']}/{data['model_calls']} model calls")
+        if data["recorded_estimated_cost_usd"] is None:
+            lines.append("Recorded estimated cost: unknown")
+        else:
+            lines.append(f"Recorded estimated cost: ${data['recorded_estimated_cost_usd']:.6f}")
+        lines.append(f"Cost coverage: {data['model_calls_with_cost']}/{data['model_calls']} model calls")
+    lines.append(f"Failed spans: {len(data['failed_spans'])}")
+    for failed in data["failed_spans"]:
+        lines.append(f"  {failed['kind']} {_display(failed['name'])}: {_display(failed['error_type'] or 'unknown')}")
+    lines.append("Slowest spans (inclusive; overlapping times are not added):")
+    for span in data["slowest_spans"]:
+        lines.append(f"  {span['duration_ms']:9.2f} ms  {span['kind']} {_display(span['name'])}  {span['status']}")
+    return "\n".join(lines)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="llm-trace", description=__doc__)
     parser.add_argument("--db", type=Path, default=Path("traces.sqlite3"), help="trace database path")
@@ -56,6 +84,10 @@ def main(argv: list[str] | None = None) -> int:
     for name in ("show", "export"):
         command = commands.add_parser(name, help="inspect a trace" if name == "show" else "write trace JSON to stdout")
         command.add_argument("trace_id", help="full ID or a unique prefix of at least four characters")
+    summary = commands.add_parser("summary", help="show slow calls, failures, and recorded usage")
+    summary.add_argument("trace_id", help="full ID or a unique prefix of at least four characters")
+    summary.add_argument("--slowest", type=int, default=5, help="number of spans to rank (1 to 100)")
+    summary.add_argument("--json", action="store_true", help="write summary JSON to stdout")
     args = parser.parse_args(argv)
     try:
         store = SQLiteStore(args.db, read_only=True)
@@ -67,7 +99,11 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{trace['id']}  {trace['status']:5}  {trace['duration_ms']:9.2f} ms  {_display(trace['name'])}")
         else:
             trace = store.get(store.resolve_id(args.trace_id))
-            print(json.dumps(trace, indent=2, allow_nan=False) if args.command == "export" else _show(trace))
+            if args.command == "summary":
+                data = summarize(trace, slowest=args.slowest)
+                print(json.dumps(data, indent=2, allow_nan=False) if args.json else _summary(data))
+            else:
+                print(json.dumps(trace, indent=2, allow_nan=False) if args.command == "export" else _show(trace))
     except (OSError, sqlite3.Error, ValueError, KeyError) as error:
         message = error.args[0] if isinstance(error, KeyError) else str(error)
         print(f"llm-trace: {_display(str(message))}", file=sys.stderr)

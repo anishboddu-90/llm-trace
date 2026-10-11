@@ -44,6 +44,20 @@ class CLITests(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout), self.trace.to_dict())
         self.assertEqual(result.stderr, "")
 
+    def test_summary_and_json(self):
+        result = self.run_cli("summary", self.trace.id[:8], "--slowest", "1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Recorded tokens: 10 in / 2 out", result.stdout)
+        self.assertIn("Usage coverage: 1/1", result.stdout)
+        self.assertIn("Failed spans: 0", result.stdout)
+        result = self.run_cli("summary", self.trace.id, "--json", "--slowest", "1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        self.assertEqual(data["recorded_input_tokens"], 10)
+        self.assertEqual(len(data["slowest_spans"]), 1)
+        invalid = self.run_cli("summary", self.trace.id, "--slowest", "0")
+        self.assertEqual(invalid.returncode, 1)
+
     def test_invalid_id_and_limit_return_errors(self):
         for args in (("show", "zzzz"), ("show", "00000000"), ("list", "--limit", "0")):
             with self.subTest(args=args):
