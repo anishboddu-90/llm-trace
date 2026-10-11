@@ -10,5 +10,8 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []
 
+[project.scripts]
+llm-trace = "llm_trace.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]

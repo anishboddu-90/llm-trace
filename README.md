@@ -2,7 +2,7 @@
 
 A small Python tool for figuring out where an LLM request spent its time and which calls failed.
 
-This is the first slice: context managers for request traces and nested model/tool calls, token counts, and JSON export. It has no runtime dependencies and doesn't need an API key.
+Record request traces and nested model/tool calls, then inspect them from your terminal. It has no runtime dependencies and doesn't need an API key.
 
 ## Try it
 
@@ -15,8 +15,7 @@ python -m pip install -e .
 ```
 
 ```python
-import json
-from llm_trace import Tracer
+from llm_trace import SQLiteStore, Tracer
 
 tracer = Tracer()
 
@@ -28,8 +27,20 @@ with tracer.trace("answer-question") as trace:
         # Make your model call here, then copy its reported token usage.
         call.set_usage(input_tokens=120, output_tokens=40)
 
-print(json.dumps(trace.to_dict(), indent=2))
+SQLiteStore("traces.sqlite3").save(trace)
+print(trace.id)
 ```
+
+```sh
+llm-trace list
+llm-trace show <trace-id>
+llm-trace export <trace-id> > trace.json
+llm-trace --db /path/to/traces.sqlite3 list --status error --limit 10
+```
+
+`show` and `export` accept a unique ID prefix of at least four characters. An ambiguous prefix returns an error. Commands only read existing databases; they won't silently create an empty one at the wrong path.
+
+`save()` accepts completed traces and opens its own SQLite connection. The same ID can't be saved twice. Save explicitly after leaving the trace; a database write is separate from your model call. If a request raises, save its completed trace from your application's exception handler or a `finally` block.
 
 Use the same `with` blocks in async functions. Await child tasks before leaving their trace or parent span. Each async request keeps its own context.
 
@@ -47,4 +58,4 @@ Prompts, responses, tool arguments, and exception messages aren't captured. Name
 python -m unittest discover -s tests -v
 ```
 
-Next: SQLite storage and a command to inspect saved traces. A dashboard and provider integrations can come after the trace format is useful on its own.
+Next: a runnable example and a summary of slow calls, failures, and known token usage. A dashboard and provider integrations can come after the trace format is useful on its own.
