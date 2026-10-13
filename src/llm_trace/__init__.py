@@ -3,5 +3,6 @@
 from .tracer import Span, Trace, Tracer
 from .storage import SQLiteStore
 from .summary import summarize
+from .comparison import compare_traces
 
-__all__ = ["Span", "Trace", "Tracer", "SQLiteStore", "summarize"]
+__all__ = ["Span", "Trace", "Tracer", "SQLiteStore", "summarize", "compare_traces"]

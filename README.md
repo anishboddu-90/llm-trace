@@ -51,12 +51,30 @@ llm-trace summary <trace-id>
 llm-trace summary <trace-id> --json --slowest 3
 llm-trace export <trace-id> > trace.json
 llm-trace report <trace-id> --output trace.html
+llm-trace compare <baseline-id> <candidate-id>
+llm-trace compare <baseline-id> <candidate-id> --json
 llm-trace --db /path/to/traces.sqlite3 list --status error --limit 10
 ```
 
 `show`, `summary`, and `export` accept a unique ID prefix of at least four characters. An ambiguous prefix returns an error. Commands only read existing databases; they won't silently create an empty one at the wrong path.
 
 `report` accepts the same ID prefixes and writes a standalone HTML file. Open it directly in your browser. It shows nested calls, duration bars, usage coverage, and failures; it has no JavaScript, external fonts, or network requests. The output path must be new: existing files are never overwritten. Reports include recorded names and model metadata.
+
+## Compare two runs
+
+```sh
+llm-trace --db demo.sqlite3 compare <normal-id> <slow-generation-id>
+```
+
+`compare` reads two traces from the selected database. It reports differences in request duration, failed calls, tokens, and estimated cost. Token and cost differences are only calculated when both runs have complete measurements; missing values stay unknown. A trace with no model calls has zero model usage and cost.
+
+Calls match by their full path of parent names and kinds, so two `generate` calls under different steps stay separate. Repeated calls at the same path compare their mean inclusive duration and retain their counts. Model and prompt-version changes are shown alongside matched calls. Added and removed paths are listed separately. Renaming a call makes it a different path.
+
+Compare equivalent workloads when investigating a change. Two individual runs aren't a statistical regression test, and inclusive call durations can overlap. `--json` provides the same comparison data for scripts. Percentage changes are undefined when the baseline is zero.
+
+From Python, use `compare_traces(baseline_dict, candidate_dict)` to compare traces loaded from any stores.
+
+## Trace lifecycle
 
 `save()` accepts completed traces and opens its own SQLite connection. The same ID can't be saved twice. Save explicitly after leaving the trace; a database write is separate from your model call. If a request raises, save its completed trace from your application's exception handler or a `finally` block.
 
@@ -101,7 +119,7 @@ There is an opt-in live example. Install `openai` separately, set `OPENAI_API_KE
 python -m unittest discover -s tests -v
 ```
 
-Tests use Python's standard library and cover trace isolation, storage, summaries, the demo, and the command-line interface.
+Tests use Python's standard library and cover trace isolation, storage, summaries, comparisons, HTML reports, provider adapters, the demo, and the command-line interface.
 
 Installing `openai` also enables three SDK contract tests. Their HTTP transport is mocked locally; they don't use real credentials or contact OpenAI.
 

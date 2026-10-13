@@ -9,6 +9,7 @@ import sys
 from .storage import SQLiteStore
 from .summary import summarize
 from .report import render_report
+from .comparison import compare_traces
 
 
 def _display(value: str) -> str:
@@ -75,6 +76,45 @@ def _summary(data: dict) -> str:
     return "\n".join(lines)
 
 
+def _comparison(data: dict) -> str:
+    before, after = data["baseline"], data["candidate"]
+    duration = data["duration_ms"]
+    lines = [
+        f"Baseline: {_display(before['name'])}  {before['trace_id']}",
+        f"Candidate: {_display(after['name'])}  {after['trace_id']}",
+        f"Status: {before['status']} -> {after['status']}",
+        f"Request duration: {duration['baseline']:.2f} -> {duration['candidate']:.2f} ms ({duration['delta']:+.2f} ms)",
+        f"Failed spans: {data['failed_spans']['baseline']} -> {data['failed_spans']['candidate']}",
+    ]
+    for field, label in (("input_tokens", "Input tokens"), ("output_tokens", "Output tokens"),
+                         ("estimated_cost_usd", "Estimated cost (USD)")):
+        metric = data[field]
+        if metric["delta"] is None:
+            lines.append(f"{label}: not comparable (missing measurements)")
+        elif field == "estimated_cost_usd":
+            lines.append(f"{label}: {metric['baseline']:.6f} -> {metric['candidate']:.6f} ({metric['delta']:+.6f})")
+        else:
+            lines.append(f"{label}: {metric['baseline']} -> {metric['candidate']} ({metric['delta']:+d})")
+    lines.append("Calls (inclusive mean duration; groups can overlap):")
+    for group in data["calls"]:
+        path = " / ".join(f"{node['kind']} {node['name']}" for node in group["path"])
+        lines.append(f"  {_display(path)}")
+        base, new = group["baseline"], group["candidate"]
+        if group["presence"] != "matched":
+            side = new if new else base
+            lines.append(f"    {group['presence']}: {side['count']} calls, mean {side['mean_duration_ms']:.2f} ms")
+        else:
+            delta = group["mean_duration_ms"]["delta"]
+            lines.append(f"    mean {base['mean_duration_ms']:.2f} -> {new['mean_duration_ms']:.2f} ms ({delta:+.2f} ms); calls {base['count']} -> {new['count']}; failed {base['failed_calls']} -> {new['failed_calls']}")
+            for field, label in (("models", "Models"), ("prompt_versions", "Prompt versions")):
+                if base[field] != new[field]:
+                    old = _display(", ".join(base[field])) or "not recorded"
+                    current = _display(", ".join(new[field])) or "not recorded"
+                    lines.append(f"    {label}: {old} -> {current}")
+    lines.append("This compares two individual runs, not a statistical regression test.")
+    return "\n".join(lines)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="llm-trace", description=__doc__)
     parser.add_argument("--db", type=Path, default=Path("traces.sqlite3"), help="trace database path")
@@ -92,6 +132,10 @@ def main(argv: list[str] | None = None) -> int:
     report = commands.add_parser("report", help="save a standalone HTML report")
     report.add_argument("trace_id", help="full ID or a unique prefix of at least four characters")
     report.add_argument("--output", required=True, type=Path, help="new HTML file path (never overwrites)")
+    comparison = commands.add_parser("compare", help="compare two saved runs")
+    comparison.add_argument("baseline_id", help="baseline trace ID or unique prefix")
+    comparison.add_argument("candidate_id", help="candidate trace ID or unique prefix")
+    comparison.add_argument("--json", action="store_true", help="write comparison JSON to stdout")
     args = parser.parse_args(argv)
     try:
         store = SQLiteStore(args.db, read_only=True)
@@ -101,6 +145,11 @@ def main(argv: list[str] | None = None) -> int:
                 print("No traces recorded.")
             for trace in traces:
                 print(f"{trace['id']}  {trace['status']:5}  {trace['duration_ms']:9.2f} ms  {_display(trace['name'])}")
+        elif args.command == "compare":
+            baseline = store.get(store.resolve_id(args.baseline_id))
+            candidate = store.get(store.resolve_id(args.candidate_id))
+            data = compare_traces(baseline, candidate)
+            print(json.dumps(data, indent=2, allow_nan=False) if args.json else _comparison(data))
         else:
             trace = store.get(store.resolve_id(args.trace_id))
             if args.command == "summary":

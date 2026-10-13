@@ -72,6 +72,27 @@ class CLITests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertFalse(self.path.exists())
 
+    def test_comparison_reports_changed_prompt_and_handles_partial_data(self):
+        tracer = Tracer()
+        with tracer.trace("candidate") as candidate:
+            with tracer.span("answer"):
+                with tracer.span("generate", kind="model", model="new-model", prompt_version="v2"):
+                    pass
+        SQLiteStore(self.path).save(candidate)
+        result = self.run_cli("compare", self.trace.id[:8], candidate.id[:8])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Prompt versions: v1 -> v2", result.stdout)
+        self.assertIn("Models: demo -> new-model", result.stdout)
+        self.assertIn("Input tokens: not comparable", result.stdout)
+        result = self.run_cli("compare", self.trace.id, candidate.id, "--json")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        self.assertEqual(data["candidate"]["trace_id"], candidate.id)
+        self.assertIsNone(data["input_tokens"]["delta"])
+        self.assertEqual(len(data["calls"]), 2)
+        missing = self.run_cli("compare", self.trace.id, "00000000")
+        self.assertEqual(missing.returncode, 1)
+
     def test_terminal_control_characters_in_names_are_escaped(self):
         tracer = Tracer()
         with tracer.trace("unsafe\n\x1b[31m") as trace:
