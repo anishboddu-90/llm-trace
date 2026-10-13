@@ -39,6 +39,8 @@ def _show(trace: dict) -> str:
             label += f"  prompt={_display(span['prompt_version'])}"
         if span["input_tokens"] is not None:
             label += f"  tokens={span['input_tokens']} in/{span['output_tokens']} out"
+        if span.get("cached_input_tokens") is not None:
+            label += f"  cached={span['cached_input_tokens']} in"
         if span["estimated_cost_usd"] is not None:
             label += f"  cost=${span['estimated_cost_usd']:.6f}"
         if span["error_type"]:

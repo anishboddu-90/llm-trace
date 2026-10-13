@@ -33,7 +33,9 @@ class Span:
     prompt_version: str | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
+    cached_input_tokens: int | None = None
     estimated_cost_usd: float | None = None
+    token_pricing: dict[str, str | None] | None = None
 
     def record_error(self, error_type: str) -> None:
         """Mark a returned failure without raising an application exception."""
@@ -44,6 +46,7 @@ class Span:
     def set_usage(
         self, *, input_tokens: int, output_tokens: int,
         estimated_cost_usd: float | None = None,
+        cached_input_tokens: int | None = None,
     ) -> None:
         """Use provider-reported counts and an optional caller-calculated cost."""
         if self.status != "running":
@@ -53,6 +56,9 @@ class Span:
         for count in (input_tokens, output_tokens):
             if type(count) is not int or count < 0:
                 raise ValueError("token counts must be non-negative integers")
+        if cached_input_tokens is not None:
+            if type(cached_input_tokens) is not int or not 0 <= cached_input_tokens <= input_tokens:
+                raise ValueError("cached input tokens must be between zero and input tokens")
         if estimated_cost_usd is not None:
             if (type(estimated_cost_usd) not in (int, float)
                     or not math.isfinite(estimated_cost_usd)
@@ -60,6 +66,7 @@ class Span:
                 raise ValueError("cost must be a finite, non-negative number")
         self.input_tokens = input_tokens
         self.output_tokens = output_tokens
+        self.cached_input_tokens = cached_input_tokens
         self.estimated_cost_usd = estimated_cost_usd
 
 

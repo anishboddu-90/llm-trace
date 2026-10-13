@@ -4,7 +4,7 @@ import json
 from importlib import import_module
 import unittest
 
-from llm_trace import Tracer
+from llm_trace import TokenPricing, Tracer
 from llm_trace.integrations.openai import AsyncOpenAIResponses, OpenAIResponses
 
 try:
@@ -39,10 +39,12 @@ class OpenAISDKTests(unittest.TestCase):
                     http_client=httpx.Client(transport=httpx.MockTransport(handle))) as client:
             tracer = Tracer()
             with tracer.trace("sdk-test") as trace:
-                result = OpenAIResponses(tracer, client).create(model="fixture-model", input="private-input", prompt_version="v1")
+                result = OpenAIResponses(tracer, client, pricing=TokenPricing(1, 2, "0.5")).create(model="fixture-model", input="private-input", prompt_version="v1")
         self.assertEqual(result.id, "resp_local_fixture")
         self.assertEqual(received, [{"model": "fixture-model", "input": "private-input"}])
         self.assertEqual(trace.spans[0].input_tokens, 12)
+        self.assertEqual(trace.spans[0].cached_input_tokens, 0)
+        self.assertEqual(trace.spans[0].estimated_cost_usd, 0.000018)
         self.assertNotIn("private-input", json.dumps(trace.to_dict()))
 
     def test_actual_sdk_returned_failure_does_not_capture_provider_message(self):
@@ -65,6 +67,7 @@ class AsyncOpenAISDKTests(unittest.IsolatedAsyncioTestCase):
                                http_client=httpx.AsyncClient(transport=transport)) as client:
             tracer = Tracer()
             with tracer.trace("sdk-test") as trace:
-                result = await AsyncOpenAIResponses(tracer, client).create(model="fixture-model", input="private-input")
+                result = await AsyncOpenAIResponses(tracer, client, pricing=TokenPricing(1, 2)).create(model="fixture-model", input="private-input")
         self.assertEqual(result.id, "resp_local_fixture")
         self.assertEqual(trace.spans[0].output_tokens, 3)
+        self.assertEqual(trace.spans[0].estimated_cost_usd, 0.000018)

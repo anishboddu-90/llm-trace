@@ -97,7 +97,7 @@ Exceptions are re-raised after recording their type. If your application catches
 
 ## What gets recorded
 
-Names, parent IDs, UTC start times, elapsed milliseconds, status, exception types, and any model name, prompt version, usage, or cost you provide. Cost is optional and caller-calculated; there is no built-in pricing table. Missing usage stays unknown rather than becoming zero.
+Names, parent IDs, UTC start times, elapsed milliseconds, status, exception types, and any model name, prompt version, usage, or cost you provide. Cost is optional; the OpenAI adapter can estimate it from rates you supply. There is no built-in pricing table. Missing usage stays unknown rather than becoming zero.
 
 Prompts, responses, tool arguments, and exception messages aren't captured. Names and model metadata are stored as provided, so keep secrets out of those fields.
 
@@ -120,7 +120,21 @@ SQLiteStore("traces.sqlite3").save(trace)
 
 `AsyncOpenAIResponses` works the same way with an `AsyncOpenAI` client; await its `create()` method. The wrapper returns the original SDK response, forwards request arguments, and records the returned model and input/output token counts when available. `prompt_version` belongs to the tracer and isn't sent to OpenAI. Request and response content aren't recorded.
 
-Only non-streaming, foreground calls are supported. Streaming and background calls are rejected before contacting the provider. Timing covers the SDK call, including its internal retries; individual attempts aren't separated. Returned `failed` or `incomplete` responses mark the model span as failed but still return to your application. Exceptions and cancellation propagate unchanged. This adapter doesn't estimate cost.
+Only non-streaming, foreground calls are supported. Streaming and background calls are rejected before contacting the provider. Timing covers the SDK call, including its internal retries; individual attempts aren't separated. Returned `failed` or `incomplete` responses mark the model span as failed but still return to your application. Exceptions and cancellation propagate unchanged.
+
+For token-cost estimates, pass rates to either adapter:
+
+```python
+from llm_trace import TokenPricing
+
+# Fictional rates for this example, in USD per million tokens.
+rates = TokenPricing(input_per_million="2", output_per_million="10", cached_input_per_million="0.5")
+responses = OpenAIResponses(tracer, client, pricing=rates)
+```
+
+Use rates appropriate to the model you call. One rate configuration applies to every call through that wrapper. The estimate charges uncached input, cached input, and output separately. If you omit the cached-input rate, all input uses the regular input rate. If a cached rate is configured but the cache count is missing or invalid, cost stays unknown. Missing token usage also leaves cost unknown. No rates means no estimate.
+
+Estimates cover reported tokens at your supplied rates. The rate snapshot and valid cached-input count are saved with the model span; `show` and HTML reports display the cache count. There is no automatic price lookup or accounting for other provider charges. Existing saved traces remain readable; older traces have no cache count or rate snapshot.
 
 The adapter uses the [official Responses API fields](https://developers.openai.com/api/reference/python/resources/responses/methods/create). Tests use local fixtures, not live API calls.
 

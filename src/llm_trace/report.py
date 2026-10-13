@@ -27,6 +27,8 @@ def render_report(trace: dict) -> str:
             metadata.append(f"Prompt: {_text(span['prompt_version'])}")
         if span["error_type"] is not None:
             metadata.append(f"Error: {_text(span['error_type'])}")
+        if span.get("cached_input_tokens") is not None:
+            metadata.append(f"Cached input: {_text(span['cached_input_tokens'])}")
         usage = "Not recorded" if span["input_tokens"] is None else f"{span['input_tokens']} in / {span['output_tokens']} out"
         cost = "Not recorded" if span["estimated_cost_usd"] is None else f"${span['estimated_cost_usd']:.6f}"
         state = "error" if span["status"] == "error" else "ok"
