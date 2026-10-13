@@ -76,6 +76,19 @@ From Python, use `compare_traces(baseline_dict, candidate_dict)` to compare trac
 
 ## Trace lifecycle
 
+For automatic saving, pass a store when creating your tracer:
+
+```python
+tracer = Tracer(store=SQLiteStore("traces.sqlite3"))
+with tracer.trace("answer"):
+    with tracer.span("retrieve", kind="tool"):
+        documents = retrieve(question)
+```
+
+Completed traces are saved once, including requests that raise or are cancelled. Ordinary save failures are logged through `llm_trace.tracer` and preserve your application's result or exception. Logs include the trace ID and failure type, not the storage error message. Store setup errors still raise normally. Saving is synchronous and happens after request timing ends, so reported latency excludes the database write. For high-volume async apps, the synchronous write needs to be accounted for separately.
+
+Use either automatic or explicit saving for a trace; combining both tries to save the same ID twice.
+
 `save()` accepts completed traces and opens its own SQLite connection. The same ID can't be saved twice. Save explicitly after leaving the trace; a database write is separate from your model call. If a request raises, save its completed trace from your application's exception handler or a `finally` block.
 
 Use the same `with` blocks in async functions. Await child tasks before leaving their trace or parent span. Each async request keeps its own context.

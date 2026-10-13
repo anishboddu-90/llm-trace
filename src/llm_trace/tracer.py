@@ -5,8 +5,9 @@ from contextvars import ContextVar
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 import math
+import logging
 from time import perf_counter
-from typing import Iterator, Literal
+from typing import Iterator, Literal, Protocol
 from uuid import uuid4
 
 SpanKind = Literal["model", "tool", "step"]
@@ -85,6 +86,11 @@ class _Active:
 
 
 _active: ContextVar[_Active | None] = ContextVar("llm_trace_active", default=None)
+_logger = logging.getLogger(__name__)
+
+
+class TraceSink(Protocol):
+    def save(self, trace: Trace) -> None: ...
 
 
 def _timestamp() -> str:
@@ -92,6 +98,22 @@ def _timestamp() -> str:
 
 
 class Tracer:
+    def __init__(self, *, store: TraceSink | None = None):
+        self.store = store
+
+    def _save(self, trace: Trace) -> None:
+        if self.store is None:
+            return
+        try:
+            self.store.save(trace)
+        except Exception as error:
+            # Export failures must not replace an application result or exception.
+            # Only record the type: a storage error message may contain secrets.
+            try:
+                _logger.warning("Trace %s could not be saved (%s)", trace.id, type(error).__name__)
+            except Exception:
+                pass  # A failing logging handler must not break the application either.
+
     @contextmanager
     def trace(self, name: str) -> Iterator[Trace]:
         """Start a request. Use ordinary `with` blocks in sync or async code."""
@@ -111,6 +133,7 @@ class Tracer:
         finally:
             trace.duration_ms = (perf_counter() - started) * 1000
             _active.reset(token)
+            self._save(trace)
 
     @contextmanager
     def span(
