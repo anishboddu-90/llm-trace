@@ -11,26 +11,26 @@ Requires Python 3.11 or newer.
 ```sh
 python -m venv .venv
 source .venv/bin/activate
-python -m pip install -e .
+python -m pip install .
 ```
 
 To see it work before instrumenting your application:
 
 ```sh
-python examples/demo.py --db demo.sqlite3
+llm-trace --db demo.sqlite3 demo
 llm-trace --db demo.sqlite3 list
 llm-trace --db demo.sqlite3 summary <slow-generation-id>
 llm-trace --db demo.sqlite3 show <recovered-lookup-id>
 ```
 
-The demo prints IDs for four requests: normal, slow generation, recovered lookup, and failed lookup. Copy an ID into the last two commands. It uses artificial delays, token counts, and prices. It shows how to inspect a problem; it isn't a benchmark or a real model integration.
+The demo prints IDs for four requests: normal, slow generation, recovered lookup, and failed lookup. Copy an ID into the last two commands. It runs from the installed package, makes no API calls, and appends new traces when repeated. Storage accepts empty databases and existing llm-trace databases; it rejects unrelated SQLite schemas. The demo uses artificial delays, token counts, and prices. It shows automatic saving, the Responses adapter, cache-aware cost estimates, and inspection; it isn't a benchmark or a real model integration. `python examples/demo.py --db demo.sqlite3` still works from a checkout.
 
 ## Instrument a request
 
 ```python
 from llm_trace import SQLiteStore, Tracer
 
-tracer = Tracer()
+tracer = Tracer(store=SQLiteStore("traces.sqlite3"))
 
 with tracer.trace("answer-question") as trace:
     with tracer.span("retrieve", kind="tool"):
@@ -40,7 +40,6 @@ with tracer.trace("answer-question") as trace:
         # Make your model call here, then copy its reported token usage.
         call.set_usage(input_tokens=120, output_tokens=40)
 
-SQLiteStore("traces.sqlite3").save(trace)
 print(trace.id)
 ```
 
@@ -112,10 +111,10 @@ If you already use the OpenAI Python SDK, wrap its Responses calls:
 ```python
 from llm_trace.integrations.openai import OpenAIResponses
 
+tracer = Tracer(store=SQLiteStore("traces.sqlite3"))
 responses = OpenAIResponses(tracer, client)  # Your existing OpenAI client.
 with tracer.trace("answer") as trace:
     result = responses.create(model=model_name, input=question, prompt_version="v2")
-SQLiteStore("traces.sqlite3").save(trace)
 ```
 
 `AsyncOpenAIResponses` works the same way with an `AsyncOpenAI` client; await its `create()` method. The wrapper returns the original SDK response, forwards request arguments, and records the returned model and input/output token counts when available. `prompt_version` belongs to the tracer and isn't sent to OpenAI. Request and response content aren't recorded.
@@ -143,6 +142,7 @@ There is an opt-in live example. Install `openai` separately, set `OPENAI_API_KE
 ## Development
 
 ```sh
+python -m pip install -e .
 python -m unittest discover -s tests -v
 ```
 
@@ -153,3 +153,5 @@ Installing `openai` also enables three SDK contract tests. Their HTTP transport 
 ## Current scope
 
 Local traces, SQLite storage, terminal inspection, standalone HTML reports, and an explicit OpenAI Responses adapter. No live dashboard, streaming support, OpenTelemetry export, or output evaluations yet.
+
+Before the first release: a reproducible case study on an existing app, measurements of trace and storage overhead, and a clean-install trial by someone outside the project.

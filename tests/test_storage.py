@@ -124,3 +124,23 @@ class StorageTests(unittest.TestCase):
             connection.execute("UPDATE traces SET payload = ? WHERE id = ?", (json.dumps(data), trace.id))
         with self.assertRaisesRegex(ValueError, "unsupported trace schema"):
             self.store.get(trace.id)
+
+    def test_version_number_alone_does_not_claim_another_apps_database(self):
+        path = Path(self.directory.name) / "other.sqlite3"
+        with closing(sqlite3.connect(path)) as connection, connection:
+            connection.execute("CREATE TABLE settings (value TEXT)")
+            connection.execute("PRAGMA user_version = 1")
+        for read_only in (False, True):
+            with self.assertRaisesRegex(ValueError, "not an llm-trace database"):
+                SQLiteStore(path, read_only=read_only)
+        with closing(sqlite3.connect(path)) as connection:
+            self.assertEqual(connection.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall(), [("settings",)])
+            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 1)
+
+    def test_concurrent_store_initialization_uses_one_complete_schema(self):
+        path = Path(self.directory.name) / "new.sqlite3"
+        with ThreadPoolExecutor(max_workers=4) as workers:
+            stores = list(workers.map(SQLiteStore, [path] * 8))
+        self.assertTrue(all(store.list_recent() == [] for store in stores))
+        with closing(sqlite3.connect(path)) as connection:
+            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 1)

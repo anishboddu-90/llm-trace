@@ -16,8 +16,8 @@ def main():
         parser.error("set OPENAI_API_KEY before running this live example")
     from openai import OpenAI
 
-    tracer = Tracer()
     store = SQLiteStore(args.db)
+    tracer = Tracer(store=store)
     with OpenAI() as client:
         try:
             with tracer.trace("openai-example") as trace:
@@ -27,7 +27,6 @@ def main():
                 )
                 print(result.output_text)
         finally:
-            store.save(trace)
             print(f"Trace: {trace.id}")
 
 

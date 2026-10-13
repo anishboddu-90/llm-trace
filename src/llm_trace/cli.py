@@ -10,6 +10,7 @@ from .storage import SQLiteStore
 from .summary import summarize
 from .report import render_report
 from .comparison import compare_traces
+from .demo import run_demo
 
 
 def _display(value: str) -> str:
@@ -138,8 +139,15 @@ def main(argv: list[str] | None = None) -> int:
     comparison.add_argument("baseline_id", help="baseline trace ID or unique prefix")
     comparison.add_argument("candidate_id", help="candidate trace ID or unique prefix")
     comparison.add_argument("--json", action="store_true", help="write comparison JSON to stdout")
+    commands.add_parser("demo", help="append four offline example traces (no API calls)")
     args = parser.parse_args(argv)
     try:
+        if args.command == "demo":
+            ids = run_demo(args.db)
+            print("Offline demo: artificial delays, token counts, and USD rates. No API calls.")
+            for name, trace_id in ids.items():
+                print(f"{name}: {trace_id}")
+            return 0
         store = SQLiteStore(args.db, read_only=True)
         if args.command == "list":
             traces = store.list_recent(limit=args.limit, status=args.status)

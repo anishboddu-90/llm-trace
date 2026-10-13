@@ -16,9 +16,18 @@ class SQLiteStore:
         if not read_only:
             self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self._connect()) as connection:
+            if not read_only:
+                # Serialize initialization so another process can't see half a schema.
+                connection.execute("BEGIN IMMEDIATE")
             version = connection.execute("PRAGMA user_version").fetchone()[0]
             if version not in (0, 1):
                 raise ValueError(f"unsupported database version: {version}")
+            if version == 1:
+                columns = {row["name"] for row in connection.execute("PRAGMA table_info(traces)")}
+                if columns != {"id", "name", "started_at", "status", "duration_ms", "payload"}:
+                    raise ValueError("this is not an llm-trace database")
+            elif connection.execute("SELECT 1 FROM sqlite_master WHERE name NOT GLOB 'sqlite_*' LIMIT 1").fetchone():
+                raise ValueError("database contains an unrelated schema; choose an empty or llm-trace database")
             if read_only:
                 if version != 1:
                     raise ValueError("this is not an llm-trace database")
