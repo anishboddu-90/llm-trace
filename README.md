@@ -71,6 +71,27 @@ Prompts, responses, tool arguments, and exception messages aren't captured. Name
 
 Span times include their children. A parent and child can both appear in the slowest list, and parallel calls can overlap. Use the request duration for wall time; don't add span durations together.
 
+## OpenAI Responses
+
+If you already use the OpenAI Python SDK, wrap its Responses calls:
+
+```python
+from llm_trace.integrations.openai import OpenAIResponses
+
+responses = OpenAIResponses(tracer, client)  # Your existing OpenAI client.
+with tracer.trace("answer") as trace:
+    result = responses.create(model=model_name, input=question, prompt_version="v2")
+SQLiteStore("traces.sqlite3").save(trace)
+```
+
+`AsyncOpenAIResponses` works the same way with an `AsyncOpenAI` client; await its `create()` method. The wrapper returns the original SDK response, forwards request arguments, and records the returned model and input/output token counts when available. `prompt_version` belongs to the tracer and isn't sent to OpenAI. Request and response content aren't recorded.
+
+Only non-streaming, foreground calls are supported. Streaming and background calls are rejected before contacting the provider. Timing covers the SDK call, including its internal retries; individual attempts aren't separated. Returned `failed` or `incomplete` responses mark the model span as failed but still return to your application. Exceptions and cancellation propagate unchanged. This adapter doesn't estimate cost.
+
+The adapter uses the [official Responses API fields](https://developers.openai.com/api/reference/python/resources/responses/methods/create). Tests use local fixtures, not live API calls.
+
+There is an opt-in live example. Install `openai` separately, set `OPENAI_API_KEY` in your environment, then run `python examples/openai_request.py --model <your-model>`. This makes a real API call using your account. The base package doesn't install or import the OpenAI SDK.
+
 ## Development
 
 ```sh
@@ -79,6 +100,8 @@ python -m unittest discover -s tests -v
 
 Tests use Python's standard library and cover trace isolation, storage, summaries, the demo, and the command-line interface.
 
+Installing `openai` also enables three SDK contract tests. Their HTTP transport is mocked locally; they don't use real credentials or contact OpenAI.
+
 ## Current scope
 
-Local traces, SQLite storage, and terminal inspection. No dashboard, automatic provider instrumentation, OpenTelemetry export, or output evaluations yet. The next step is to instrument a real application and see which missing details make debugging harder.
+Local traces, SQLite storage, terminal inspection, and an explicit OpenAI Responses adapter. No dashboard, streaming support, OpenTelemetry export, or output evaluations yet.

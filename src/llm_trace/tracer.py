@@ -34,6 +34,12 @@ class Span:
     output_tokens: int | None = None
     estimated_cost_usd: float | None = None
 
+    def record_error(self, error_type: str) -> None:
+        """Mark a returned failure without raising an application exception."""
+        if self.status != "running":
+            raise RuntimeError("cannot change a finished span")
+        self.error_type = _name(error_type)
+
     def set_usage(
         self, *, input_tokens: int, output_tokens: int,
         estimated_cost_usd: float | None = None,
@@ -140,7 +146,7 @@ class Tracer:
             span.error_type = type(error).__name__
             raise
         else:
-            span.status = "ok"
+            span.status = "error" if span.error_type is not None else "ok"
         finally:
             span.duration_ms = (perf_counter() - started) * 1000
             _active.reset(token)
