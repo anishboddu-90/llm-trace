@@ -8,6 +8,7 @@ import sys
 
 from .storage import SQLiteStore
 from .summary import summarize
+from .report import render_report
 
 
 def _display(value: str) -> str:
@@ -88,6 +89,9 @@ def main(argv: list[str] | None = None) -> int:
     summary.add_argument("trace_id", help="full ID or a unique prefix of at least four characters")
     summary.add_argument("--slowest", type=int, default=5, help="number of spans to rank (1 to 100)")
     summary.add_argument("--json", action="store_true", help="write summary JSON to stdout")
+    report = commands.add_parser("report", help="save a standalone HTML report")
+    report.add_argument("trace_id", help="full ID or a unique prefix of at least four characters")
+    report.add_argument("--output", required=True, type=Path, help="new HTML file path (never overwrites)")
     args = parser.parse_args(argv)
     try:
         store = SQLiteStore(args.db, read_only=True)
@@ -102,6 +106,11 @@ def main(argv: list[str] | None = None) -> int:
             if args.command == "summary":
                 data = summarize(trace, slowest=args.slowest)
                 print(json.dumps(data, indent=2, allow_nan=False) if args.json else _summary(data))
+            elif args.command == "report":
+                document = render_report(trace)
+                with args.output.open("x", encoding="utf-8") as output:
+                    output.write(document)
+                print(f"Report: {_display(str(args.output))}")
             else:
                 print(json.dumps(trace, indent=2, allow_nan=False) if args.command == "export" else _show(trace))
     except (OSError, sqlite3.Error, ValueError, KeyError) as error:

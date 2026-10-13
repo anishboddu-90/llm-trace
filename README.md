@@ -50,10 +50,13 @@ llm-trace show <trace-id>
 llm-trace summary <trace-id>
 llm-trace summary <trace-id> --json --slowest 3
 llm-trace export <trace-id> > trace.json
+llm-trace report <trace-id> --output trace.html
 llm-trace --db /path/to/traces.sqlite3 list --status error --limit 10
 ```
 
 `show`, `summary`, and `export` accept a unique ID prefix of at least four characters. An ambiguous prefix returns an error. Commands only read existing databases; they won't silently create an empty one at the wrong path.
+
+`report` accepts the same ID prefixes and writes a standalone HTML file. Open it directly in your browser. It shows nested calls, duration bars, usage coverage, and failures; it has no JavaScript, external fonts, or network requests. The output path must be new: existing files are never overwritten. Reports include recorded names and model metadata.
 
 `save()` accepts completed traces and opens its own SQLite connection. The same ID can't be saved twice. Save explicitly after leaving the trace; a database write is separate from your model call. If a request raises, save its completed trace from your application's exception handler or a `finally` block.
 
@@ -104,4 +107,4 @@ Installing `openai` also enables three SDK contract tests. Their HTTP transport 
 
 ## Current scope
 
-Local traces, SQLite storage, terminal inspection, and an explicit OpenAI Responses adapter. No dashboard, streaming support, OpenTelemetry export, or output evaluations yet.
+Local traces, SQLite storage, terminal inspection, standalone HTML reports, and an explicit OpenAI Responses adapter. No live dashboard, streaming support, OpenTelemetry export, or output evaluations yet.
