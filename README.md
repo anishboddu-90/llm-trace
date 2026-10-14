@@ -141,12 +141,21 @@ There is an opt-in live example. Install `openai` separately, set `OPENAI_API_KE
 
 ## Development
 
+To measure local tracing and database-write overhead:
+
+```sh
+llm-trace benchmark
+llm-trace benchmark --spans 20 --json > overhead.json
+```
+
+This runs the same CPU workload without tracing, with tracing in memory, and with SQLite saving. It makes no model calls and removes its temporary database afterward. Full request timings include the save; the write is also measured separately. See [the method and local measurements](docs/benchmark.md) for raw samples and limitations.
+
 ```sh
 python -m pip install -e .
 python -m unittest discover -s tests -v
 ```
 
-Tests use Python's standard library and cover trace isolation, storage, summaries, comparisons, HTML reports, provider adapters, the demo, and the command-line interface.
+Tests use Python's standard library and cover trace isolation, storage, summaries, comparisons, HTML reports, provider adapters, the demo, benchmark failures, and the command-line interface.
 
 Installing `openai` also enables three SDK contract tests. Their HTTP transport is mocked locally; they don't use real credentials or contact OpenAI.
 
@@ -154,4 +163,4 @@ Installing `openai` also enables three SDK contract tests. Their HTTP transport 
 
 Local traces, SQLite storage, terminal inspection, standalone HTML reports, and an explicit OpenAI Responses adapter. No live dashboard, streaming support, OpenTelemetry export, or output evaluations yet.
 
-Before the first release: a reproducible case study on an existing app, measurements of trace and storage overhead, and a clean-install trial by someone outside the project.
+Before the first release: a reproducible case study on an existing app and a clean-install trial by someone outside the project. Local trace and storage overhead measurements are available above; they still need checking against an actual application workload.

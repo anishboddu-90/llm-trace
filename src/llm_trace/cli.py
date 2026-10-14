@@ -11,6 +11,7 @@ from .summary import summarize
 from .report import render_report
 from .comparison import compare_traces
 from .demo import run_demo
+from .benchmark import run_benchmark, format_benchmark
 
 
 def _display(value: str) -> str:
@@ -140,8 +141,18 @@ def main(argv: list[str] | None = None) -> int:
     comparison.add_argument("candidate_id", help="candidate trace ID or unique prefix")
     comparison.add_argument("--json", action="store_true", help="write comparison JSON to stdout")
     commands.add_parser("demo", help="append four offline example traces (no API calls)")
+    benchmark = commands.add_parser("benchmark", help="measure local tracing and saving overhead in a temporary database")
+    benchmark.add_argument("--rounds", type=int, default=200, help="measured requests per case (1 to 10000)")
+    benchmark.add_argument("--warmup", type=int, default=20, help="unmeasured requests per case (0 to 10000)")
+    benchmark.add_argument("--spans", type=int, default=5, help="steps per request (1 to 100)")
+    benchmark.add_argument("--work", type=int, default=200, help="CPU iterations per step (0 to 100000)")
+    benchmark.add_argument("--json", action="store_true", help="write measurements and raw samples to stdout")
     args = parser.parse_args(argv)
     try:
+        if args.command == "benchmark":
+            data = run_benchmark(rounds=args.rounds, warmup=args.warmup, spans=args.spans, work=args.work)
+            print(json.dumps(data, indent=2, allow_nan=False) if args.json else format_benchmark(data))
+            return 0
         if args.command == "demo":
             ids = run_demo(args.db)
             print("Offline demo: artificial delays, token counts, and USD rates. No API calls.")
