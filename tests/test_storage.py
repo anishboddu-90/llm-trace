@@ -144,3 +144,58 @@ class StorageTests(unittest.TestCase):
         self.assertTrue(all(store.list_recent() == [] for store in stores))
         with closing(sqlite3.connect(path)) as connection:
             self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 1)
+
+    def test_reordered_columns_preserve_every_saved_field(self):
+        path = Path(self.directory.name) / "reordered.sqlite3"
+        with closing(sqlite3.connect(path)) as connection, connection:
+            connection.execute("""CREATE TABLE traces (
+                payload TEXT NOT NULL, duration_ms REAL NOT NULL, status TEXT NOT NULL,
+                started_at TEXT NOT NULL, name TEXT NOT NULL, id TEXT PRIMARY KEY
+            )""")
+            connection.execute("PRAGMA user_version = 1")
+        store = SQLiteStore(path)
+        with self.tracer.trace("reordered") as trace:
+            with self.tracer.span("lookup", kind="tool"):
+                pass
+        store.save(trace)
+        reader = SQLiteStore(path, read_only=True)
+        self.assertEqual(reader.get(trace.id), trace.to_dict())
+        self.assertEqual(reader.resolve_id(trace.id[:8]), trace.id)
+        self.assertEqual(reader.list_recent(), [{
+            "id": trace.id, "name": trace.name, "started_at": trace.started_at,
+            "status": trace.status, "duration_ms": trace.duration_ms,
+        }])
+
+    def test_matching_column_names_do_not_accept_incompatible_schemas(self):
+        columns = ["id TEXT PRIMARY KEY", "name TEXT NOT NULL", "started_at TEXT NOT NULL",
+                   "status TEXT NOT NULL", "duration_ms REAL NOT NULL", "payload TEXT NOT NULL"]
+        variants = {
+            "no_primary_key": ["id TEXT"] + columns[1:],
+            "nullable_name": columns[:1] + ["name TEXT"] + columns[2:],
+            "wrong_duration_type": columns[:4] + ["duration_ms TEXT NOT NULL"] + columns[5:],
+            "extra_generated_column": columns + ["extra TEXT GENERATED ALWAYS AS (name) VIRTUAL"],
+        }
+        for name, definitions in variants.items():
+            with self.subTest(name=name):
+                path = Path(self.directory.name) / f"{name}.sqlite3"
+                with closing(sqlite3.connect(path)) as connection, connection:
+                    connection.execute("CREATE TABLE traces (" + ", ".join(definitions) + ")")
+                    connection.execute("PRAGMA user_version = 1")
+                before = path.read_bytes()
+                for read_only in (True, False):
+                    with self.assertRaisesRegex(ValueError, "not an llm-trace database"):
+                        SQLiteStore(path, read_only=read_only)
+                    self.assertEqual(path.read_bytes(), before)
+
+    def test_a_view_cannot_impersonate_the_trace_table(self):
+        path = Path(self.directory.name) / "view.sqlite3"
+        with closing(sqlite3.connect(path)) as connection, connection:
+            connection.execute("""CREATE VIEW traces AS SELECT
+                'id' AS id, 'name' AS name, 'date' AS started_at, 'ok' AS status,
+                1.0 AS duration_ms, '{}' AS payload""")
+            connection.execute("PRAGMA user_version = 1")
+        before = path.read_bytes()
+        for read_only in (True, False):
+            with self.assertRaisesRegex(ValueError, "not an llm-trace database"):
+                SQLiteStore(path, read_only=read_only)
+            self.assertEqual(path.read_bytes(), before)

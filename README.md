@@ -25,6 +25,8 @@ llm-trace --db demo.sqlite3 show <recovered-lookup-id>
 
 The demo prints IDs for four requests: normal, slow generation, recovered lookup, and failed lookup. Copy an ID into the last two commands. It runs from the installed package, makes no API calls, and appends new traces when repeated. Storage accepts empty databases and existing llm-trace databases; it rejects unrelated SQLite schemas. The demo uses artificial delays, token counts, and prices. It shows automatic saving, the Responses adapter, cache-aware cost estimates, and inspection; it isn't a benchmark or a real model integration. `python examples/demo.py --db demo.sqlite3` still works from a checkout.
 
+Existing databases must have the expected column types, required fields, and trace ID primary key. Column order can differ. A version number or matching column names alone won't pass the storage check; incompatible layouts are rejected without modification.
+
 ## Instrument a request
 
 ```python

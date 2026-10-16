@@ -9,6 +9,22 @@ import sqlite3
 from .tracer import Trace
 
 
+def _validate_schema(connection: sqlite3.Connection) -> None:
+    table = connection.execute("SELECT type FROM sqlite_master WHERE name = 'traces'").fetchone()
+    # xinfo includes generated columns, which table_info silently omits.
+    columns = {row["name"]: row for row in connection.execute("PRAGMA table_xinfo(traces)")}
+    expected = {"id": "TEXT", "name": "TEXT", "started_at": "TEXT", "status": "TEXT",
+                "duration_ms": "REAL", "payload": "TEXT"}
+    if table is None or table["type"] != "table" or columns.keys() != expected.keys():
+        raise ValueError("this is not an llm-trace database")
+    for name, kind in expected.items():
+        column = columns[name]
+        if (column["type"].upper() != kind or column["hidden"] != 0
+                or column["pk"] != (1 if name == "id" else 0)
+                or (name != "id" and column["notnull"] != 1)):
+            raise ValueError("this is not an llm-trace database")
+
+
 class SQLiteStore:
     def __init__(self, path: str | Path, *, read_only: bool = False):
         self.path = Path(path).expanduser().resolve()
@@ -23,9 +39,7 @@ class SQLiteStore:
             if version not in (0, 1):
                 raise ValueError(f"unsupported database version: {version}")
             if version == 1:
-                columns = {row["name"] for row in connection.execute("PRAGMA table_info(traces)")}
-                if columns != {"id", "name", "started_at", "status", "duration_ms", "payload"}:
-                    raise ValueError("this is not an llm-trace database")
+                _validate_schema(connection)
             elif connection.execute("SELECT 1 FROM sqlite_master WHERE name NOT GLOB 'sqlite_*' LIMIT 1").fetchone():
                 raise ValueError("database contains an unrelated schema; choose an empty or llm-trace database")
             if read_only:
@@ -68,7 +82,7 @@ class SQLiteStore:
         payload = json.dumps(trace.to_dict(), allow_nan=False)
         with closing(self._connect()) as connection, connection:
             connection.execute(
-                "INSERT INTO traces VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO traces (id, name, started_at, status, duration_ms, payload) VALUES (?, ?, ?, ?, ?, ?)",
                 (trace.id, trace.name, trace.started_at, trace.status, trace.duration_ms, payload),
             )
 
