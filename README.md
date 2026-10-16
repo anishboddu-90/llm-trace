@@ -27,6 +27,8 @@ The demo prints IDs for four requests: normal, slow generation, recovered lookup
 
 Existing databases must have the expected column types, required fields, and trace ID primary key. Column order can differ. A version number or matching column names alone won't pass the storage check; incompatible layouts are rejected without modification.
 
+Saved traces are checked before inspection: required fields, value types, finite non-negative timings and costs, and valid span parents. Invalid records return an error naming the field, without printing its contents or changing the database. Older traces without cache counts or pricing snapshots remain readable. Unknown added fields are preserved. Saving also checks the record, which catches invalid edits to a finished trace before writing it.
+
 ## Instrument a request
 
 ```python

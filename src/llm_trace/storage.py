@@ -7,6 +7,7 @@ import re
 import sqlite3
 
 from .tracer import Trace
+from ._validation import validate_header, validate_trace
 
 
 def _validate_schema(connection: sqlite3.Connection) -> None:
@@ -79,7 +80,9 @@ class SQLiteStore:
             span.status not in ("ok", "error") for span in trace.spans
         ):
             raise ValueError("finish the trace and all its spans before saving")
-        payload = json.dumps(trace.to_dict(), allow_nan=False)
+        data = trace.to_dict()
+        validate_trace(data)
+        payload = json.dumps(data, allow_nan=False)
         with closing(self._connect()) as connection, connection:
             connection.execute(
                 "INSERT INTO traces (id, name, started_at, status, duration_ms, payload) VALUES (?, ?, ?, ?, ?, ?)",
@@ -98,16 +101,25 @@ class SQLiteStore:
                 "SELECT id, name, started_at, status, duration_ms FROM traces"
                 + where + " ORDER BY started_at DESC, id DESC LIMIT ?", parameters,
             ).fetchall()
-        return [dict(row) for row in rows]
+        records = [dict(row) for row in rows]
+        for record in records:
+            validate_header(record)
+        return records
 
     def get(self, trace_id: str) -> dict:
         with closing(self._connect()) as connection:
-            row = connection.execute("SELECT payload FROM traces WHERE id = ?", (trace_id,)).fetchone()
+            row = connection.execute("SELECT * FROM traces WHERE id = ?", (trace_id,)).fetchone()
         if row is None:
             raise KeyError(f"trace not found: {trace_id}")
-        data = json.loads(row["payload"])
-        if data.get("schema_version") != 1:
-            raise ValueError("unsupported trace schema version")
+        try:
+            data = json.loads(row["payload"])
+        except (ValueError, TypeError, RecursionError):
+            raise ValueError("invalid trace: payload must contain valid JSON") from None
+        validate_trace(data)
+        header = {key: row[key] for key in ("id", "name", "started_at", "status", "duration_ms")}
+        validate_header(header)
+        if any(data[key] != value for key, value in header.items()):
+            raise ValueError("invalid trace: indexed metadata does not match the payload")
         return data
 
     def resolve_id(self, prefix: str) -> str:
