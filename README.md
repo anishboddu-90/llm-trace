@@ -163,6 +163,8 @@ Tests use Python's standard library and cover trace isolation, storage, summarie
 
 Installing `openai` also enables three SDK contract tests. Their HTTP transport is mocked locally; they don't use real credentials or contact OpenAI.
 
+Before a release, run [the build and clean-install check](docs/release-check.md). It builds a wheel from the source distribution, installs it in a fresh environment, and runs the tests and installed commands from outside the checkout. The check needs the separate `build` development tool; the base package still has no runtime dependencies.
+
 ## Current scope
 
 Local traces, SQLite storage, terminal inspection, standalone HTML reports, and an explicit OpenAI Responses adapter. No live dashboard, streaming support, OpenTelemetry export, or output evaluations yet.
